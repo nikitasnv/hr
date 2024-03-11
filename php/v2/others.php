@@ -12,7 +12,9 @@ class Contractor
     public $type;
     public $name;
 
-    public static function getById(int $resellerId): self
+    public $mobile;
+
+    public static function getById(int $resellerId): ?self //может не вернуть объект
     {
         return new self($resellerId); // fakes the getById method
     }
@@ -43,6 +45,11 @@ class Status
             2 => 'Rejected',
         ];
 
+        //проверяем, что такой статус есть
+        if (!isset($a[$id])) {
+            throw new \Exception("Wrong status id.", 500);
+        }
+
         return $a[$id];
     }
 }
@@ -57,19 +64,25 @@ abstract class ReferencesOperation
     }
 }
 
-function getResellerEmailFrom()
+function getResellerEmailFrom(int $resellerId): string // по идее должен быть входной аргумент ID для получения почты
 {
     return 'contractor@example.com';
 }
 
-function getEmailsByPermit($resellerId, $event)
+function getEmailsByPermit($resellerId, $event): array
 {
     // fakes the method
     return ['someemeil@example.com', 'someemeil2@example.com'];
 }
 
+function __(string $string, array $array, int $resellerId): string
+{
+    //fake translator
+    return '';
+}
+
 class NotificationEvents
 {
     const CHANGE_RETURN_STATUS = 'changeReturnStatus';
-    const NEW_RETURN_STATUS    = 'newReturnStatus';
+    const NEW_RETURN_STATUS = 'newReturnStatus';
 }

@@ -10,11 +10,10 @@ class TsReturnOperation extends ReferencesOperation
     /**
      * @throws \Exception
      */
-    public function doOperation(): void
+    public function doOperation(): array // возвращаемый тип от родителя
     {
+        //получаем параметры из $_REQUEST['data']
         $data = (array)$this->getRequest('data');
-        $resellerId = $data['resellerId'];
-        $notificationType = (int)$data['notificationType'];
         $result = [
             'notificationEmployeeByEmail' => false,
             'notificationClientByEmail'   => false,
@@ -24,17 +23,17 @@ class TsReturnOperation extends ReferencesOperation
             ],
         ];
 
-        if (empty((int)$resellerId)) {
+        //проверяем, что все необходимые пользователи найдены по ID
+        if (empty($resellerId = (int)$data['resellerId'])) {
             $result['notificationClientBySms']['message'] = 'Empty resellerId';
             return $result;
         }
 
-        if (empty((int)$notificationType)) {
+        if (empty($notificationType = (int)$data['notificationType'])) {
             throw new \Exception('Empty notificationType', 400);
         }
 
-        $reseller = Seller::getById((int)$resellerId);
-        if ($reseller === null) {
+        if (empty(Seller::getById($resellerId))) {
             throw new \Exception('Seller not found!', 400);
         }
 
@@ -44,7 +43,7 @@ class TsReturnOperation extends ReferencesOperation
         }
 
         $cFullName = $client->getFullName();
-        if (empty($client->getFullName())) {
+        if (empty(trim($cFullName))) { //всегда было false из-за пробела
             $cFullName = $client->name;
         }
 
@@ -58,9 +57,10 @@ class TsReturnOperation extends ReferencesOperation
             throw new \Exception('Expert not found!', 400);
         }
 
+        //проверяем тип уведомления (новая позиция или обновление), получаем изменение в виде строки для отправки
         $differences = '';
         if ($notificationType === self::TYPE_NEW) {
-            $differences = __('NewPositionAdded', null, $resellerId);
+            $differences = __('NewPositionAdded', [], $resellerId);
         } elseif ($notificationType === self::TYPE_CHANGE && !empty($data['differences'])) {
             $differences = __('PositionStatusHasChanged', [
                     'FROM' => Status::getName((int)$data['differences']['from']),
@@ -87,7 +87,7 @@ class TsReturnOperation extends ReferencesOperation
         // Если хоть одна переменная для шаблона не задана, то не отправляем уведомления
         foreach ($templateData as $key => $tempData) {
             if (empty($tempData)) {
-                throw new \Exception("Template Data ({$key}) is empty!", 500);
+                throw new \Exception("Template Data ($key) is empty!", 500);
             }
         }
 
@@ -96,6 +96,7 @@ class TsReturnOperation extends ReferencesOperation
         $emails = getEmailsByPermit($resellerId, 'tsGoodsReturn');
         if (!empty($emailFrom) && count($emails) > 0) {
             foreach ($emails as $email) {
+                //рассылаем сотрудникам письма
                 MessagesClient::sendMessage([
                     0 => [ // MessageTypes::EMAIL
                            'emailFrom' => $emailFrom,
@@ -104,6 +105,7 @@ class TsReturnOperation extends ReferencesOperation
                            'message'   => __('complaintEmployeeEmailBody', $templateData, $resellerId),
                     ],
                 ], $resellerId, NotificationEvents::CHANGE_RETURN_STATUS);
+                //в результате работы ставим статус, что сотрудникам отправлено письмо
                 $result['notificationEmployeeByEmail'] = true;
 
             }
@@ -120,10 +122,13 @@ class TsReturnOperation extends ReferencesOperation
                            'message'   => __('complaintClientEmailBody', $templateData, $resellerId),
                     ],
                 ], $resellerId, $client->id, NotificationEvents::CHANGE_RETURN_STATUS, (int)$data['differences']['to']);
+                //в результате работы ставим статус, что клиенту отправлено письмо
                 $result['notificationClientByEmail'] = true;
             }
 
+            //если у клиента записан телефон, отсылаем смс-уведомление
             if (!empty($client->mobile)) {
+                $error = null;
                 $res = NotificationManager::send($resellerId, $client->id, NotificationEvents::CHANGE_RETURN_STATUS, (int)$data['differences']['to'], $templateData, $error);
                 if ($res) {
                     $result['notificationClientBySms']['isSent'] = true;
